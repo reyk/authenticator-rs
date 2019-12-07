@@ -4,6 +4,7 @@
 
 extern crate libc;
 
+use std::ffi::CStr;
 use std::io::Result;
 use std::mem;
 use std::os::unix::io::RawFd;
@@ -38,9 +39,16 @@ ioctl!(IOR, usb_get_deviceinfo_ioctl, b'U', 112; usb_device_info);
 ioctl!(IOR, usb_get_report_id_ioctl, b'U', 25; i32);
 
 unsafe fn usbhid_is_u2f(fd: RawFd) -> Result<bool> {
-    // Get USB device info.
+    // Get USB device info to make sure that it's a valid USB device.
     let mut udi: usb_device_info = mem::zeroed();
     let _ = usb_get_deviceinfo_ioctl(fd, &mut udi)?;
+
+    let vendor = CStr::from_ptr(udi.udi_vendor.as_ptr()).to_string_lossy();
+    let product = CStr::from_ptr(udi.udi_product.as_ptr()).to_string_lossy();
+    debug!(
+        "device vendor {} product {} ({:04x}:{:04x})",
+        vendor, product, udi.udi_vendorNo, udi.udi_productNo
+    );
 
     // Get report descriptor.
     let desc = from_unix_ptr(hid_get_report_desc(fd))?;
