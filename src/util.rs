@@ -39,8 +39,7 @@ impl Signed for usize {
 #[cfg(any(target_os = "linux"))]
 pub fn from_unix_result<T: Signed>(rv: T) -> io::Result<T> {
     if rv.is_negative() {
-        let errno = unsafe { *libc::__errno_location() };
-        Err(io::Error::from_raw_os_error(errno))
+        Err(io::Error::last_os_error())
     } else {
         Ok(rv)
     }
@@ -53,6 +52,24 @@ pub fn from_unix_result<T: Signed>(rv: T) -> io::Result<T> {
         Err(io::Error::from_raw_os_error(errno))
     } else {
         Ok(rv)
+    }
+}
+
+#[cfg(any(target_os = "openbsd"))]
+pub fn from_unix_result<T: Signed>(rv: T) -> io::Result<T> {
+    if rv.is_negative() {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(rv)
+    }
+}
+
+#[cfg(any(target_os = "openbsd"))]
+pub fn from_unix_ptr<T>(ptr: *mut T) -> io::Result<*mut T> {
+    if ptr.is_null() {
+        Err(io_err("returned null pointer"))
+    } else {
+        Ok(ptr)
     }
 }
 
