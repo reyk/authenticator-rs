@@ -55,9 +55,15 @@ fn main() {
         .expect("Couldn't write hidraw bindings");
 }
 
+#[cfg(target_os = "openbsd")]
+fn link_lib() {
+    println!("cargo:rustc-link-search=native=/usr/lib");
+    println!("cargo:rustc-link-lib=static=usbhid");
+}
+
 #[cfg(all(target_os = "openbsd", feature = "binding-recompile"))]
 fn main() {
-    println!("cargo:rustc-link-lib=usbhid");
+    link_lib();
 
     let bindings = bindgen::Builder::default()
         .header("src/openbsd/wrapper.h")
@@ -76,6 +82,5 @@ fn main() {
 
 #[cfg(all(target_os = "openbsd", not(feature = "binding-recompile")))]
 fn main() {
-    println!("cargo:rustc-link-search=native=/usr/lib");
-    println!("cargo:rustc-link-lib=static=usbhid");
+    link_lib();
 }
