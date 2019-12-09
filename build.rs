@@ -76,5 +76,6 @@ fn main() {
 
 #[cfg(all(target_os = "openbsd", not(feature = "binding-recompile")))]
 fn main() {
-    println!("cargo:rustc-link-lib=usbhid");
+    println!("cargo:rustc-link-search=native=/usr/lib");
+    println!("cargo:rustc-link-lib=static=usbhid");
 }
