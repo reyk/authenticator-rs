@@ -3,12 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use std::collections::HashMap;
-use std::ffi::{CString, OsStr, OsString};
+use std::ffi::{CString, OsString};
+use std::io;
 use std::os::unix::ffi::OsStrExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::{fs, io};
 
 use runloop::RunLoop;
 use util::from_unix_result;
@@ -37,14 +38,16 @@ where
     pub fn run(&mut self, alive: &dyn Fn() -> bool) -> io::Result<()> {
         // Loop until we're stopped by the controlling thread, or fail.
         while alive() {
-            // Iterate all existing devices.
-            for dev in fs::read_dir("/dev")?.filter_map(|dev| dev.ok()) {
-                let path = dev.path();
-                let name = path.file_name().unwrap_or(OsStr::new(""));
-                if !name.to_string_lossy().starts_with("uhid") {
-                    continue;
-                }
-
+            // Iterate the first 100 uhid(4) devices.
+            //
+            // We could scan the /dev directory for all existing uhid
+            // devices but this wouldn't work under the strict
+            // unveil(2) policy of Firefox under OpenBSD that only
+            // allows direct access to certain files under /dev.
+            for path in (0..100)
+                .map(|unit| PathBuf::from(&format!("/dev/uhid{}", unit)))
+                .filter(|path| path.exists())
+            {
                 let os_path = path.as_os_str().to_os_string();
                 let cstr = CString::new(os_path.as_bytes())?;
 
