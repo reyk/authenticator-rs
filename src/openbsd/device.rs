@@ -75,7 +75,7 @@ impl Device {
             let mut data = vec![0u8; capacity];
 
             // Send 1 byte ping
-            data[1..=7].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x81, 0, 1]);
+            data[..8].copy_from_slice(&[0, 0xff, 0xff, 0xff, 0xff, 0x81, 0, 1]);
             self.write_all(&data[0..=self.usbhid.out_len])?;
 
             // Wait for response
@@ -130,6 +130,7 @@ impl Write for Device {
         if buf.len() != self.usbhid.out_len + 1 {
             return Err(io_err("invalid write length"));
         }
+        // Always skip the first byte (report number)
         let data = &buf[1..];
         let data_ptr = data.as_ptr() as *const libc::c_void;
         let rv = unsafe { libc::write(self.fd, data_ptr, data.len()) };

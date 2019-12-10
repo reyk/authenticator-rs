@@ -39,7 +39,8 @@ impl Signed for usize {
 #[cfg(any(target_os = "linux"))]
 pub fn from_unix_result<T: Signed>(rv: T) -> io::Result<T> {
     if rv.is_negative() {
-        Err(io::Error::last_os_error())
+        let errno = unsafe { *libc::__errno_location() };
+        Err(io::Error::from_raw_os_error(errno))
     } else {
         Ok(rv)
     }
