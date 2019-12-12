@@ -4,14 +4,8 @@ extern crate bindgen;
 #[cfg(all(target_os = "linux", feature = "binding-recompile"))]
 use std::path::PathBuf;
 
-#[cfg(all(target_os = "openbsd", feature = "binding-recompile"))]
-use std::path::PathBuf;
-
-#[cfg(any(
-    all(not(target_os = "linux"), not(target_os = "openbsd")),
-    all(not(feature = "binding-recompile"), not(target_os = "openbsd")),
-))]
-fn main() {}
+#[cfg(any(not(target_os = "linux"), not(feature = "binding-recompile")))]
+fn main () {}
 
 #[cfg(all(target_os = "linux", feature = "binding-recompile"))]
 fn main() {
@@ -53,34 +47,4 @@ fn main() {
     bindings
         .write_to_file(out_path.join("src").join("linux").join(name))
         .expect("Couldn't write hidraw bindings");
-}
-
-#[cfg(target_os = "openbsd")]
-fn link_lib() {
-    println!("cargo:rustc-link-search=native=/usr/lib");
-    println!("cargo:rustc-link-lib=static=usbhid");
-}
-
-#[cfg(all(target_os = "openbsd", feature = "binding-recompile"))]
-fn main() {
-    link_lib();
-
-    let bindings = bindgen::Builder::default()
-        .header("src/openbsd/wrapper.h")
-        .whitelist_var("^IOC.*")
-        .whitelist_type("^usb_device_info")
-        .whitelist_type("^hid_.*")
-        .whitelist_function("^hid_.*")
-        .generate()
-        .expect("Unable to get usbhid bindings");
-
-    let out_path = PathBuf::from("src/openbsd/bindings.rs");
-    bindings
-        .write_to_file(out_path)
-        .expect("Couldn't write usbhid bindings");
-}
-
-#[cfg(all(target_os = "openbsd", not(feature = "binding-recompile")))]
-fn main() {
-    link_lib();
 }

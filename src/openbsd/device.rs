@@ -4,13 +4,12 @@
 
 extern crate libc;
 
-use std::ffi::{CString, OsString};
+use std::ffi::OsString;
 use std::io::{Read, Result, Write};
 use std::mem;
-use std::os::unix::prelude::*;
 
 use consts::CID_BROADCAST;
-use platform::usbhid;
+use platform::monitor::FidoDev;
 use u2ftypes::U2FDevice;
 use util::{from_unix_result, io_err};
 
@@ -19,37 +18,22 @@ pub struct Device {
     path: OsString,
     fd: libc::c_int,
     cid: [u8; 4],
-    usbhid: usbhid::UsbHid,
+    out_len: usize,
 }
 
 impl Device {
-    pub fn new(path: OsString) -> Result<Self> {
-        let cstr = CString::new(path.as_bytes())?;
-        let fd = unsafe { libc::open(cstr.as_ptr(), libc::O_RDWR) };
-        let fd = from_unix_result(fd)?;
-        debug!("device found: {:?} fd {}", path, fd);
+    pub fn new(fido: FidoDev) -> Result<Self> {
+        debug!("device found: {:?}", fido);
         Ok(Self {
-            path,
-            fd,
+            path: fido.os_path,
+            fd: fido.fd,
             cid: CID_BROADCAST,
-            usbhid: Default::default(),
+            out_len: 64,
         })
     }
 
     pub fn is_u2f(&mut self) -> bool {
-        if !usbhid::is_u2f_device(self.fd) {
-            return false;
-        }
         debug!("device {:?} is U2F/FIDO", self.path);
-        match usbhid::open_u2f_device(self.fd) {
-            Ok(usbhid) => {
-                self.usbhid = usbhid;
-            }
-            Err(err) => {
-                debug!("device {:?} error: {}", self.path, err);
-                return false;
-            }
-        }
 
         // From OpenBSD's libfido2 in 6.6-current:
         // "OpenBSD (as of 201910) has a bug that causes it to lose
@@ -67,16 +51,11 @@ impl Device {
     fn ping(&mut self) -> Result<()> {
         let capacity = 256;
 
-        if capacity < self.usbhid.out_len + 1 {
-            return Err(io_err("reported out len too small"));
-        }
-
         for _ in 0..10 {
             let mut data = vec![0u8; capacity];
 
             // Send 1 byte ping
-            data[..8].copy_from_slice(&[0, 0xff, 0xff, 0xff, 0xff, 0x81, 0, 1]);
-            self.write_all(&data[0..=self.usbhid.out_len])?;
+            self.write_all(&[0, 0xff, 0xff, 0xff, 0xff, 0x81, 0, 1])?;
 
             // Wait for response
             let mut pfd: libc::pollfd = unsafe { mem::zeroed() };
@@ -88,7 +67,7 @@ impl Device {
             }
 
             // Read response
-            self.read_exact(&mut data[0..self.usbhid.out_len])?;
+            self.read(&mut data[..])?;
 
             return Ok(());
         }
@@ -113,31 +92,19 @@ impl PartialEq for Device {
 
 impl Read for Device {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        if buf.len() != self.usbhid.in_len {
-            return Err(io_err("invalid read length"));
-        }
         let buf_ptr = buf.as_mut_ptr() as *mut libc::c_void;
         let rv = unsafe { libc::read(self.fd, buf_ptr, buf.len()) };
-        if from_unix_result(rv as usize)? != buf.len() {
-            return Err(io_err("invalid read result"));
-        }
-        Ok(buf.len())
+        from_unix_result(rv as usize)
     }
 }
 
 impl Write for Device {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        if buf.len() != self.usbhid.out_len + 1 {
-            return Err(io_err("invalid write length"));
-        }
         // Always skip the first byte (report number)
         let data = &buf[1..];
         let data_ptr = data.as_ptr() as *const libc::c_void;
         let rv = unsafe { libc::write(self.fd, data_ptr, data.len()) };
-        if from_unix_result(rv as usize)? != data.len() {
-            return Err(io_err("invalid write result"));
-        }
-        Ok(buf.len())
+        Ok(from_unix_result(rv as usize)? + 1)
     }
 
     fn flush(&mut self) -> Result<()> {

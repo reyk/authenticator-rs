@@ -6,5 +6,3 @@ pub mod device;
 pub mod transaction;
 
 mod monitor;
-mod usbhid;
-mod wrapper;

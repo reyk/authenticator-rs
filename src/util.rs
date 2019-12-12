@@ -65,15 +65,6 @@ pub fn from_unix_result<T: Signed>(rv: T) -> io::Result<T> {
     }
 }
 
-#[cfg(any(target_os = "openbsd"))]
-pub fn from_unix_ptr<T>(ptr: *mut T) -> io::Result<*mut T> {
-    if ptr.is_null() {
-        Err(io_err("returned null pointer"))
-    } else {
-        Ok(ptr)
-    }
-}
-
 pub fn io_err(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Other, msg)
 }

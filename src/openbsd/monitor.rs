@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::ffi::{CString, OsString};
 use std::io;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -16,9 +17,15 @@ use util::from_unix_result;
 
 const POLL_TIMEOUT: u64 = 500;
 
+#[derive(Debug)]
+pub struct FidoDev {
+    pub fd: RawFd,
+    pub os_path: OsString,
+}
+
 pub struct Monitor<F>
 where
-    F: Fn(OsString, &dyn Fn() -> bool) + Sync,
+    F: Fn(FidoDev, &dyn Fn() -> bool) + Sync,
 {
     runloops: HashMap<OsString, RunLoop>,
     new_device_cb: Arc<F>,
@@ -26,7 +33,7 @@ where
 
 impl<F> Monitor<F>
 where
-    F: Fn(OsString, &dyn Fn() -> bool) + Send + Sync + 'static,
+    F: Fn(FidoDev, &dyn Fn() -> bool) + Send + Sync + 'static,
 {
     pub fn new(new_device_cb: F) -> Self {
         Self {
@@ -38,14 +45,9 @@ where
     pub fn run(&mut self, alive: &dyn Fn() -> bool) -> io::Result<()> {
         // Loop until we're stopped by the controlling thread, or fail.
         while alive() {
-            // Iterate the first 100 uhid(4) devices.
-            //
-            // We could scan the /dev directory for all existing uhid
-            // devices but this wouldn't work under the strict
-            // unveil(2) policy of Firefox under OpenBSD that only
-            // allows direct access to certain files under /dev.
-            for path in (0..100)
-                .map(|unit| PathBuf::from(&format!("/dev/uhid{}", unit)))
+            // Iterate the first 10 fido(4) devices.
+            for path in (0..10)
+                .map(|unit| PathBuf::from(&format!("/dev/fido/{}", unit)))
                 .filter(|path| path.exists())
             {
                 let os_path = path.as_os_str().to_os_string();
@@ -56,12 +58,10 @@ where
                 match from_unix_result(fd) {
                     Ok(fd) => {
                         // The device is available if it can be opened.
-                        unsafe { libc::close(fd) };
-                        self.add_device(os_path);
+                        self.add_device(FidoDev { fd, os_path });
                     }
                     Err(ref err) if err.raw_os_error() == Some(libc::EBUSY) => {
                         // The device is available but currently in use.
-                        self.add_device(os_path);
                     }
                     _ => {
                         // libc::ENODEV or any other error.
@@ -79,14 +79,14 @@ where
         Ok(())
     }
 
-    fn add_device(&mut self, path: OsString) {
-        if !self.runloops.contains_key(&path) {
+    fn add_device(&mut self, fido: FidoDev) {
+        if !self.runloops.contains_key(&fido.os_path) {
             let f = self.new_device_cb.clone();
-            let key = path.clone();
+            let key = fido.os_path.clone();
 
             let runloop = RunLoop::new(move |alive| {
                 if alive() {
-                    f(path, alive);
+                    f(fido, alive);
                 }
             });
 
